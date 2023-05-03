@@ -1,0 +1,51 @@
+{
+    "StartAt": "CreateTicket",
+    "States": {
+        "CreateTicket": {
+            "Type": "Task",
+            "Resource": "${DDBPutItem}",
+            "Parameters": {
+                "TableName": "${DDBTable}",
+                "Item": {
+                    "id": {
+                        "S.$": "$.id"
+                    },
+                    "issuerFullName": {
+                        "S.$": "$.issuerFullName"
+                    },
+                    "issuerEmail": {
+                        "S.$": "$.issuerEmail"
+                    },
+                    "subject": {
+                        "S.$": "$.subject"
+                    },
+                    "type": {
+                        "S.$": "$.type"
+                    },
+                    "timestamp": {
+                        "S.$": "$.timestamp"
+                    }
+                }
+            },
+            "Retry": [
+                {
+                    "ErrorEquals": [
+                        "States.TaskFailed"
+                    ],
+                    "IntervalSeconds": 10,
+                    "MaxAttempts": 3,
+                    "BackoffRate": 1.5
+                }
+            ],
+            "Next": "SendEmails"
+        },
+        "SendEmails": {
+            "Type": "Task",
+            "Resource": "${SendEmailsFunctionArn}",
+            "Next": "End"
+        },
+        "End": {
+            "Type": "Succeed"
+        }
+    }
+}

@@ -1,0 +1,204 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Ticket System for Studentbox Project
+
+Parameters:
+  # The email address to send emails from
+  Email:
+    Type: String
+    Description: "The email address to send emails from"
+
+Resources:
+  # Step Function State Machine for handling the ticket lifecycle
+  TicketWorkflow:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      DefinitionUri: statemachine/tickets_workflow.asl.json
+      DefinitionSubstitutions:
+        SendEmailsFunctionArn: !GetAtt SendEmailsFunction.Arn
+        DDBPutItem: !Sub arn:${AWS::Partition}:states:::dynamodb:putItem
+        DDBTable: !Ref TicketTable
+      Policies:
+        - DynamoDBWritePolicy:
+            TableName: !Ref TicketTable
+        - LambdaInvokePolicy:
+            FunctionName: !Ref SendEmailsFunction
+
+  LexBotRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lexv2.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+      Path: "/"
+      Policies:
+        - PolicyName: LexRuntimeRolePolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource: !GetAtt FormatFunction.Arn
+  
+  # Amazon Lex Bot
+  LexBot:
+    DependsOn: LexBotRole
+    Type: AWS::Lex::Bot
+    Properties:
+      Name: "StudentboxTicketBot"
+      DataPrivacy:
+        ChildDirected: false
+      IdleSessionTTLInSeconds: 300
+      RoleArn: !GetAtt LexBotRole.Arn
+      AutoBuildBotLocales: true
+      BotLocales:
+        - LocaleId: "en_GB"
+          NluConfidenceThreshold: 0.40
+          Intents:
+            - Name: "SubmitIssue"
+              SampleUtterances:
+                - Utterance: "I want to submit an issue"
+                - Utterance: "I want to submit a ticket"
+                - Utterance: "I want to submit a bug"
+                - Utterance: "I'd like to submit an issue"
+                - Utterance: "I'd like to submit a ticket"
+                - Utterance: "I'd like to submit a bug"
+              SlotPriorities:
+                - Priority: 1
+                  SlotName: "IssueSubject"
+                - Priority: 2
+                  SlotName: "IssueDescription"
+                - Priority: 3
+                  SlotName: "IssueEmail"
+              IntentConfirmationSetting:
+                PromptSpecification:
+                  MaxRetries: 3
+                  MessageGroupsList:
+                    - Message:
+                        PlainTextMessage:
+                          Value: "Okey, your issue is {IssueSubject} and the description is {IssueDescription}. I'll send you a recap at {IssueEmail}. Is this correct?"
+                DeclinationResponse:
+                  MessageGroupsList:
+                    - Message:
+                        PlainTextMessage:
+                          Value: "No problem, it's cancelled."
+              Slots:
+                - Name: "IssueSubject"
+                  SlotTypeName: "AMAZON.AlphaNumeric"
+                  ValueElicitationSetting:
+                    SlotConstraint: "Required"
+                    PromptSpecification:
+                      MaxRetries: 3
+                      MessageGroupsList:
+                        - Message:
+                            PlainTextMessage:
+                              Value: "What is the subject of your issue?"
+                - Name: "IssueDescription"
+                  SlotTypeName: "AMAZON.AlphaNumeric"
+                  ValueElicitationSetting:
+                    SlotConstraint: "Required"
+                    PromptSpecification:
+                      MaxRetries: 3
+                      MessageGroupsList:
+                        - Message:
+                            PlainTextMessage:
+                              Value: "Please describe your issue."
+                - Name: "IssueEmail"
+                  SlotTypeName: "AMAZON.EmailAddress"
+                  ValueElicitationSetting:
+                    SlotConstraint: "Required"
+                    PromptSpecification:
+                      MaxRetries: 3
+                      MessageGroupsList:
+                        - Message:
+                            PlainTextMessage:
+                              Value: "What is your email address?"
+            - Name: "FallbackIntent"
+              Description: "Fallback Intent"
+              ParentIntentSignature: "AMAZON.FallbackIntent"
+  
+  LexBotVersionWithCFN:
+    DependsOn: LexBot
+    Type: AWS::Lex::BotVersion
+    Properties:
+      BotId: !Ref LexBot
+      BotVersionLocaleSpecification:
+        - LocaleId: "en_GB"
+          BotVersionLocaleDetails:
+            SourceBotVersion: DRAFT
+  
+  BotFirstAliasWithCFN:
+    DependsOn: LexBotVersionWithCFN
+    Type: AWS::Lex::BotAlias
+    Properties:
+      BotId: !Ref LexBot
+      BotVersion: !GetAtt LexBotVersionWithCFN.BotVersion
+      BotAliasName: "StudentboxTicketBot"
+      SentimentAnalysisSettings:
+        DetectSentiment: true
+
+  # Lambda Function for handling ticket creation and updates
+  FormatFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/format/
+      Handler: app.lambda_handler
+      Runtime: python3.10
+      Policies:
+        - AWSLambdaExecute # Provides permissions for Lambda to execute
+        - AWSStepFunctionsFullAccess # Allows Lambda to start and interact with Step Function executions
+      Environment:
+        Variables:
+          STEP_FUNCTION_ARN: !GetAtt TicketWorkflow.Arn
+  
+  # Lambda Function for sending emails
+  SendEmailsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/send_emails/
+      Handler: app.lambda_handler
+      Runtime: python3.10
+      Policies:
+        - AWSLambdaExecute # Provides permissions for Lambda to execute
+        - AWSStepFunctionsFullAccess # Allows Lambda to start and interact with Step Function executions
+        - AmazonSESFullAccess # Allows Lambda to send emails using SES
+      Environment:
+        Variables:
+          SES_EMAIL: !Ref Email
+  
+  # DynamoDB Table for storing ticket data
+  TicketTable:
+    Type: AWS::Serverless::SimpleTable
+    Properties:
+      PrimaryKey:
+        Name: id
+        Type: String
+      ProvisionedThroughput:
+        ReadCapacityUnits: 1
+        WriteCapacityUnits: 1
+  
+Outputs:
+  LexBot:
+    Description: "Amazon Lex Bot for handling ticket creation and updates"
+    Value: !Ref LexBot
+  
+  LexBotAlias:
+    Description: "Amazon Lex Bot Alias for handling ticket creation and updates"
+    Value: !Ref BotFirstAliasWithCFN
+  
+
+  TicketWorkflow:
+    Description: "Step Function State Machine for handling the ticket lifecycle"
+    Value: !Ref TicketWorkflow
+
+  TicketTable:
+    Description: "DynamoDB Table for storing ticket data"
+    Value: !Ref TicketTable
+  
