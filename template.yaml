@@ -8,6 +8,11 @@ Parameters:
     Type: String
     Description: "The email address to send emails from"
 
+Globals:
+  Function:
+    Timeout: 3
+    MemorySize: 128
+
 Resources:
   # Step Function State Machine for handling the ticket lifecycle
   TicketWorkflow:
@@ -46,6 +51,12 @@ Resources:
                 Action:
                   - lambda:InvokeFunction
                 Resource: !GetAtt FormatFunction.Arn
+              - Effect: Allow
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource: "*"
   
   # Amazon Lex Bot
   LexBot:
@@ -61,8 +72,37 @@ Resources:
       BotLocales:
         - LocaleId: "en_GB"
           NluConfidenceThreshold: 0.40
+          SlotTypes:
+            - Name: "IssueSubject"
+              Description: "The subject of the issue"
+              ValueSelectionSetting:
+                ResolutionStrategy: ORIGINAL_VALUE
+              SlotTypeValues:
+                - SampleValue:
+                    Value: "login"
+                - SampleValue:
+                    Value: "install"
+                - SampleValue:
+                    Value: "runtime"
+                - SampleValue:
+                    Value: "upload"
+                - SampleValue:
+                    Value: "other"
+            - Name: "IssueType"
+              Description: "The type of the issue"
+              ValueSelectionSetting:
+                ResolutionStrategy: ORIGINAL_VALUE
+              SlotTypeValues:
+                - SampleValue:
+                    Value: "bug"
+                - SampleValue:
+                    Value: "issue"
+                - SampleValue:
+                    Value: "feature request"
           Intents:
             - Name: "SubmitIssue"
+              FulfillmentCodeHook:
+                Enabled: true
               SampleUtterances:
                 - Utterance: "I want to submit an issue"
                 - Utterance: "I want to submit a ticket"
@@ -72,26 +112,30 @@ Resources:
                 - Utterance: "I'd like to submit a bug"
               SlotPriorities:
                 - Priority: 1
-                  SlotName: "IssueSubject"
-                - Priority: 2
-                  SlotName: "IssueDescription"
+                  SlotName: "FirstName"
+                - Priority: 1
+                  SlotName: "LastName"
                 - Priority: 3
-                  SlotName: "IssueEmail"
+                  SlotName: "Email"
+                - Priority: 2
+                  SlotName: "Subject"
+                - Priority: 2
+                  SlotName: "Type"
               IntentConfirmationSetting:
                 PromptSpecification:
                   MaxRetries: 3
                   MessageGroupsList:
                     - Message:
                         PlainTextMessage:
-                          Value: "Okey, your issue is {IssueSubject} and the description is {IssueDescription}. I'll send you a recap at {IssueEmail}. Is this correct?"
+                          Value: "Just to be sure {FirstName}, you want to submit a {Type} about {Subject} and be update on {Email}?"
                 DeclinationResponse:
                   MessageGroupsList:
                     - Message:
                         PlainTextMessage:
                           Value: "No problem, it's cancelled."
               Slots:
-                - Name: "IssueSubject"
-                  SlotTypeName: "AMAZON.AlphaNumeric"
+                - Name: "FirstName"
+                  SlotTypeName: "AMAZON.FirstName"
                   ValueElicitationSetting:
                     SlotConstraint: "Required"
                     PromptSpecification:
@@ -99,9 +143,9 @@ Resources:
                       MessageGroupsList:
                         - Message:
                             PlainTextMessage:
-                              Value: "What is the subject of your issue?"
-                - Name: "IssueDescription"
-                  SlotTypeName: "AMAZON.AlphaNumeric"
+                              Value: "What is your first name?"
+                - Name: "LastName"
+                  SlotTypeName: "AMAZON.LastName"
                   ValueElicitationSetting:
                     SlotConstraint: "Required"
                     PromptSpecification:
@@ -109,8 +153,8 @@ Resources:
                       MessageGroupsList:
                         - Message:
                             PlainTextMessage:
-                              Value: "Please describe your issue."
-                - Name: "IssueEmail"
+                              Value: "What is your last name?" 
+                - Name: "Email"
                   SlotTypeName: "AMAZON.EmailAddress"
                   ValueElicitationSetting:
                     SlotConstraint: "Required"
@@ -120,6 +164,26 @@ Resources:
                         - Message:
                             PlainTextMessage:
                               Value: "What is your email address?"
+                - Name: "Type"
+                  SlotTypeName: "IssueType"
+                  ValueElicitationSetting:
+                    SlotConstraint: "Required"
+                    PromptSpecification:
+                      MaxRetries: 3
+                      MessageGroupsList:
+                        - Message:
+                            PlainTextMessage:
+                              Value: "What is the type of your issue? (bug, issue, feature request)"
+                - Name: "Subject"
+                  SlotTypeName: "IssueSubject"
+                  ValueElicitationSetting:
+                    SlotConstraint: "Required"
+                    PromptSpecification:
+                      MaxRetries: 3
+                      MessageGroupsList:
+                        - Message:
+                            PlainTextMessage:
+                              Value: "What is the subject of your issue? (login, install, runtime, upload, other)"
             - Name: "FallbackIntent"
               Description: "Fallback Intent"
               ParentIntentSignature: "AMAZON.FallbackIntent"
@@ -142,7 +206,17 @@ Resources:
       BotVersion: !GetAtt LexBotVersionWithCFN.BotVersion
       BotAliasName: "StudentboxTicketBot"
       SentimentAnalysisSettings:
-        DetectSentiment: true
+        DetectSentiment: false
+      BotAliasLocaleSettings:
+        - LocaleId: "en_GB"
+          BotAliasLocaleSetting:
+            Enabled: true
+            CodeHookSpecification:
+              LambdaCodeHook:
+                LambdaArn: !GetAtt FormatFunction.Arn
+                CodeHookInterfaceVersion: "1.0"
+          
+      
 
   # Lambda Function for handling ticket creation and updates
   FormatFunction:
@@ -152,11 +226,17 @@ Resources:
       Handler: app.lambda_handler
       Runtime: python3.10
       Policies:
-        - AWSLambdaExecute # Provides permissions for Lambda to execute
         - AWSStepFunctionsFullAccess # Allows Lambda to start and interact with Step Function executions
       Environment:
         Variables:
           STEP_FUNCTION_ARN: !GetAtt TicketWorkflow.Arn
+
+  # Wasn't created automatically
+  FormatFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${FormatFunction}
+      RetentionInDays: 3
   
   # Lambda Function for sending emails
   SendEmailsFunction:
@@ -166,12 +246,18 @@ Resources:
       Handler: app.lambda_handler
       Runtime: python3.10
       Policies:
-        - AWSLambdaExecute # Provides permissions for Lambda to execute
         - AWSStepFunctionsFullAccess # Allows Lambda to start and interact with Step Function executions
         - AmazonSESFullAccess # Allows Lambda to send emails using SES
       Environment:
         Variables:
           SES_EMAIL: !Ref Email
+
+  # Wasn't created automatically
+  SendEmailsFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${SendEmailsFunction}
+      RetentionInDays: 3
   
   # DynamoDB Table for storing ticket data
   TicketTable:
@@ -193,6 +279,13 @@ Outputs:
     Description: "Amazon Lex Bot Alias for handling ticket creation and updates"
     Value: !Ref BotFirstAliasWithCFN
   
+  FormatFunction:
+    Description: "Lambda Function for handling ticket creation and updates"
+    Value: !Ref FormatFunction
+  
+  SendEmailsFunction:
+    Description: "Lambda Function for sending emails"
+    Value: !Ref SendEmailsFunction
 
   TicketWorkflow:
     Description: "Step Function State Machine for handling the ticket lifecycle"
