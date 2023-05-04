@@ -1,4 +1,4 @@
 - Collect basic information about the "customer" and his issue
 - Process the new ticket through a *Step Functions* workflow
 - Create a ticket in a DynamoDB table
-- Send an email (*SES*) to an administrator, that he can directly reply to in order to exchange the "user"
+- Send an email (*SES*) to an administrator, that he can directly reply to in order to exchange with the "customer"
