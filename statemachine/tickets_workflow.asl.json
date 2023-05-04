@@ -37,7 +37,11 @@
                     "BackoffRate": 1.5
                 }
             ],
-            "Next": "SendEmails"
+            "Next": "SendEmails",
+            "ResultPath": "$.putItemResult",
+            "ResultSelector": {
+                "statusCode.$": "$.SdkHttpMetadata.HttpStatusCode"
+            }
         },
         "SendEmails": {
             "Type": "Task",
