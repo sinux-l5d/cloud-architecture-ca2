@@ -1,14 +1,52 @@
 import boto3
 import os
 import json
+import uuid
 from datetime import datetime
 
 
 def lambda_handler(event, context):
     print(event)
+    # TEST
+    return {
+        "sessionState": {
+            "dialogAction": {
+                "type": "Close",
+            },
+            "intent": {
+                "name": event['sessionState']['intent']['name'],
+                "state": "Fulfilled",
+            },
+        },
+        "messages": [
+            {
+                "contentType": "PlainText",
+                "content": "The ticket creation process has started."
+            }
+        ],
+    }
+    intent = event['sessionState']['intent']
+    if intent['state'] != 'ReadyForFulfillment' or intent['name'] != 'SubmitIssue':
+        return {
+            "sessionState": {
+                "dialogAction": {
+                    "type": "Close",
+                },
+                "intent": {
+                    "state": "Failed",
+                },
+            },
+            "messages": [
+                {
+                    "contentType": "PlainText",
+                    "content": "The ticket creation process has failed."
+                }
+            ],
+        }
+    # NOT ACCESSIBLE
     inp = {
-        "id": "1234567890",
-        "issuerFullName": "John Doe",
+        "id": str(uuid.uuid4()),
+        "issuerFullName": " ".join(),
         "issuerEmail": "john@doe.org",
         "subject": "runtime",
         "type": "incident",

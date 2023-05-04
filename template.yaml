@@ -51,6 +51,7 @@ Resources:
                 Action:
                   - lambda:InvokeFunction
                 Resource: !GetAtt FormatFunction.Arn
+                # @TODO: clean?
               - Effect: Allow
                 Action:
                   - "logs:CreateLogGroup"
@@ -240,6 +241,7 @@ Resources:
       SourceArn: !GetAtt BotFirstAliasWithCFN.Arn
 
 
+  # @TODO: clean?
   # Wasn't created automatically
   FormatFunctionLogGroup:
     Type: AWS::Logs::LogGroup
@@ -261,6 +263,7 @@ Resources:
         Variables:
           SES_EMAIL: !Ref Email
 
+  # @TODO: clean?
   # Wasn't created automatically
   SendEmailsFunctionLogGroup:
     Type: AWS::Logs::LogGroup
