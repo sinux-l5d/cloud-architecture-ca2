@@ -230,6 +230,15 @@ Resources:
       Environment:
         Variables:
           STEP_FUNCTION_ARN: !GetAtt TicketWorkflow.Arn
+  
+  LambdaPermissionForLex:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref FormatFunction
+      Action: lambda:InvokeFunction
+      Principal: lexv2.amazonaws.com
+      SourceArn: !GetAtt BotFirstAliasWithCFN.Arn
+
 
   # Wasn't created automatically
   FormatFunctionLogGroup:
