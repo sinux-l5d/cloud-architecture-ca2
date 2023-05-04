@@ -23,7 +23,7 @@ def lambda_handler(event, context):
             'Body': {
                 'Text': {
                     'Data': "\n".join([
-                        f"Ticket creation from {event['issuerFullName']} submitted on {dt.fromisoformat(event['timestamp']).strftime('%d/%m/%Y at %H:%M')}",
+                        f"Ticket creation from {event['issuerFullName']} submitted on {dt.fromisoformat(event['timestamp']).strftime('%d/%m/%Y at %H:%M')} (UTC)",
                         f"The {event['type']} is about {event['subject']}",
                         f"This ticket id is {event['id']}",
                         "",

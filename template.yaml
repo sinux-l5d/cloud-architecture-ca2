@@ -51,13 +51,6 @@ Resources:
                 Action:
                   - lambda:InvokeFunction
                 Resource: !GetAtt FormatFunction.Arn
-                # @TODO: clean?
-              - Effect: Allow
-                Action:
-                  - "logs:CreateLogGroup"
-                  - "logs:CreateLogStream"
-                  - "logs:PutLogEvents"
-                Resource: "*"
   
   # Amazon Lex Bot
   LexBot:
@@ -227,7 +220,9 @@ Resources:
       Handler: app.lambda_handler
       Runtime: python3.10
       Policies:
-        - AWSStepFunctionsFullAccess # Allows Lambda to start and interact with Step Function executions
+         # Allows Lambda to start a step Function executions
+        - StepFunctionsExecutionPolicy:
+            StateMachineName: !GetAtt TicketWorkflow.Name # Ref return arn here
       Environment:
         Variables:
           STEP_FUNCTION_ARN: !GetAtt TicketWorkflow.Arn
@@ -240,15 +235,6 @@ Resources:
       Principal: lexv2.amazonaws.com
       SourceArn: !GetAtt BotFirstAliasWithCFN.Arn
 
-
-  # @TODO: clean?
-  # Wasn't created automatically
-  FormatFunctionLogGroup:
-    Type: AWS::Logs::LogGroup
-    Properties:
-      LogGroupName: !Sub /aws/lambda/${FormatFunction}
-      RetentionInDays: 3
-  
   # Lambda Function for sending emails
   SendEmailsFunction:
     Type: AWS::Serverless::Function
@@ -257,20 +243,13 @@ Resources:
       Handler: app.lambda_handler
       Runtime: python3.10
       Policies:
-        - AWSStepFunctionsFullAccess # Allows Lambda to start and interact with Step Function executions
-        - AmazonSESFullAccess # Allows Lambda to send emails using SES
+        # Allows Lambda to send emails using SES
+        - SESCrudPolicy:
+            IdentityName: !Ref Email
       Environment:
         Variables:
           SES_EMAIL: !Ref Email
 
-  # @TODO: clean?
-  # Wasn't created automatically
-  SendEmailsFunctionLogGroup:
-    Type: AWS::Logs::LogGroup
-    Properties:
-      LogGroupName: !Sub /aws/lambda/${SendEmailsFunction}
-      RetentionInDays: 3
-  
   # DynamoDB Table for storing ticket data
   TicketTable:
     Type: AWS::Serverless::SimpleTable
