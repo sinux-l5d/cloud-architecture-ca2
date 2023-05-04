@@ -5,72 +5,58 @@ import uuid
 from datetime import datetime
 
 
-def lambda_handler(event, context):
-    print(event)
-    # TEST
+def lexResponse(intentName: str, state: str, message: str):
     return {
         "sessionState": {
             "dialogAction": {
                 "type": "Close",
             },
             "intent": {
-                "name": event['sessionState']['intent']['name'],
-                "state": "Fulfilled",
+                "name": intentName,
+                "state": state,
             },
         },
         "messages": [
             {
                 "contentType": "PlainText",
-                "content": "The ticket creation process has started."
+                "content": message
             }
         ],
     }
+
+
+def lexFulfilled(intentName: str):
+    return lexResponse(intentName, "Fulfilled", "The ticket is being processed.")
+
+
+def lexFailed(intentName: str):
+    return lexResponse(intentName, "Failed", "Sorry, the ticket creation process has failed.")
+
+
+def lambda_handler(event, context):
+
     intent = event['sessionState']['intent']
+
     if intent['state'] != 'ReadyForFulfillment' or intent['name'] != 'SubmitIssue':
-        return {
-            "sessionState": {
-                "dialogAction": {
-                    "type": "Close",
-                },
-                "intent": {
-                    "state": "Failed",
-                },
-            },
-            "messages": [
-                {
-                    "contentType": "PlainText",
-                    "content": "The ticket creation process has failed."
-                }
-            ],
-        }
-    # NOT ACCESSIBLE
-    inp = {
+        return lexFailed(intent['name'])
+
+    value = lambda x: intent['slots'][x]["value"]['interpretedValue']
+
+    req = {
         "id": str(uuid.uuid4()),
-        "issuerFullName": " ".join(),
-        "issuerEmail": "john@doe.org",
-        "subject": "runtime",
-        "type": "incident",
+        "issuerFullName": value("FirstName") + " " + value("LastName"),
+        "issuerEmail": value("Email"),
+        "subject": value("Subject"),
+        "type": value("Type"),
         "timestamp": datetime.now().isoformat(),
     }
 
     client = boto3.client('stepfunctions')
     res = client.start_execution(
         stateMachineArn=os.environ['STEP_FUNCTION_ARN'],
-        input=json.dumps(inp),
+        input=json.dumps(req),
     )
+
     print(res)
 
-    # for AWS Lex
-    return {
-        "dialogAction": {
-            "type": "Close",
-            "fulfillmentState": "Fulfilled",
-            "message": {
-                "contentType": "PlainText",
-                "content": "The ticket creation process has started."
-            }
-        }
-    }
-
-# aws cli command line to invoke a lambda function:
-# aws lambda invoke --function-name <function_name> --payload '{"key1": "value1", "key2": "value2", "key3": "value3"}' output.txt
+    return lexFulfilled(intent['name'])
