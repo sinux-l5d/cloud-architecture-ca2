@@ -210,9 +210,7 @@ Resources:
                 LambdaArn: !GetAtt FormatFunction.Arn
                 CodeHookInterfaceVersion: "1.0"
           
-      
-
-  # Lambda Function for handling ticket creation and updates
+  # Lambda Function that format the ticket and start the step function
   FormatFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -227,6 +225,7 @@ Resources:
         Variables:
           STEP_FUNCTION_ARN: !GetAtt TicketWorkflow.Arn
   
+  # Allow Lex to invoke the Lambda function
   LambdaPermissionForLex:
     Type: AWS::Lambda::Permission
     Properties:
